@@ -1,19 +1,17 @@
 import telebot
-from telebot import types
+from telebot import types,custom_filters
 from constants import API_KEY
 import prettytable as pt
-from telegram import ParseMode
-from telegram.ext import *
-
+from telebot.handler_backends import State,StatesGroup
+from telebot.storage import StateMemoryStorage
 import requests
 import json
-bot = telebot.TeleBot(API_KEY,parse_mode=None)
 headersdict={}
 corses=['giktreeevevedulaaa']
 session = requests.Session()
 user_id_pas={}
-
-
+state_storage = StateMemoryStorage()
+bot = telebot.TeleBot(API_KEY,state_storage=state_storage)
 
 
 def loginn(user,pas,msg):
@@ -38,17 +36,21 @@ def loginn(user,pas,msg):
     try:
         headersdict[tg_user_name]["access-token"] = x["access-token"]
     except:
-        bot.send_message(chat_id=msg.chat.id, text="Invalid Credentials please enter username",)
-        headersdict.pop(tg_user_name)
-        print(user_id_pas)
-        user_id_pas.pop(msg.from_user.id)
-        print(user_id_pas)
+        #bot.send_message(chat_id=msg.chat.id, text="Invalid Credentials please enter username",)
+        #headersdict.pop(tg_user_name)
+
+        #user_id_pas.pop(msg.from_user.id)
+    
         
-        return 5
+        return False
     headersdict[tg_user_name]["client"] = x["client"]
     headersdict[tg_user_name]["expiry"] = x["expiry"]
     headersdict[tg_user_name]["uid"] = x["uid"]
     bot.delete_message(chat_id=msg.chat.id, message_id=msg.message_id)
+    bot.send_message(msg.chat.id, 'you have successfully logged in ')
+
+    return True
+
 def generate_corurse(msg):
     x=msg.from_user.username
     try:
@@ -64,6 +66,19 @@ def generate_corurse(msg):
         asseskey[j['course']['titleAndCode'].replace(" ", "")] = j['id']
     return asseskey
 
+@bot.message_handler(commands=["go"])
+def select_course(msg):
+    global corses
+    y=generate_corurse(msg)
+    l=list(y.keys())
+    corses=l[:]
+    markup=types.ReplyKeyboardMarkup(row_width=1)
+    btn3 = types.KeyboardButton("/logout")
+    markup.add(btn3)
+    for k in l:
+        btn2 = types.KeyboardButton("/"+k)
+        markup.add(btn2)
+    bot.send_message(chat_id=msg.chat.id,text="please select a course ",reply_markup=markup)
 
 def see_course_assesment(gh,msg):
     x=msg.from_user.username
@@ -88,27 +103,6 @@ def see_course_assesment(gh,msg):
         
 
     return myassesmentout
-
-@bot.message_handler(commands=["start"])
-def start_keyboards(msg,xy=0):
-    markup=types.ReplyKeyboardRemove(selective=False)
-    markup = types.ReplyKeyboardMarkup(row_width=1)
-    btn1 = types.KeyboardButton("/login")
-    btn3 = types.KeyboardButton("/help")
-    markup.add(btn1, btn3)
-    if xy:
-        bot.send_message(chat_id=xy,text="Invalid credentials please enter ID ",reply_markup=markup)
-    return True
-    
-
-
-@bot.message_handler(commands=["login"])
-def send_help_message(msg):
-    markup = types.ReplyKeyboardMarkup(row_width=1)
-    bot.send_message(chat_id=msg.chat.id, text="please enter user name")
-    btn1 = types.KeyboardButton("/cancel")
-    markup.add(btn1)
-    return True
 
 
 
@@ -135,70 +129,66 @@ def send_hello_message(msg):
         for j in x:
             data.append((x[j][1] ,j,x[j][0]))
         for symbol, price, change in data:
-            table.add_row([symbol, price[:3],change])
+            table.add_row([symbol, price[:],change])
 
-        bot.reply_to(msg,f'<pre>{table}</pre>', parse_mode=ParseMode.HTML)
-
-
-@bot.message_handler(commands=["help"])
-def send_help_message(msg):
-    bot.reply_to(msg,"i will help you")
-   
-@bot.message_handler(commands=["go"])
-def select_course(msg):
-    global corses
-    y=generate_corurse(msg)
-    l=list(y.keys())
-    corses=l[:]
-    markup=types.ReplyKeyboardMarkup(row_width=1)
-    btn3 = types.KeyboardButton("/logout")
-    markup.add(btn3)
-    for k in l:
-        btn2 = types.KeyboardButton("/"+k)
-        markup.add(btn2)
-    bot.send_message(chat_id=msg.chat.id,text="please select a course ",reply_markup=markup)
-
-@bot.message_handler(commands=["logout"])
-def send_command_messa(msg):
-    markup=types.ReplyKeyboardRemove(selective=False)
-    bot.send_message(chat_id=msg.chat.id,text="logged_out",reply_markup=markup)
-    headersdict.pop(msg.from_user.username)
-    start_keyboards(msg)
+        bot.reply_to(msg,f'{table}')
 
 
 
 
-@bot.message_handler(content_types=['text'])
-def function_name(message):
-    x=message.text
-    stut=message.from_user.id
-    if stut in user_id_pas:
-        if len(user_id_pas[stut])==1:
-            user_id_pas[stut].append(x)
-            ree=loginn(user_id_pas[stut][0],x,message)
-        else :
-            bot.send_message(chat_id=message.chat.id,text="Enter Password")
 
-            user_id_pas[stut]=[x]
-            return 1
-    else:
-        user_id_pas[stut]=[x]
-        bot.send_message(chat_id=message.chat.id,text="Enter Password else")
-        return 1
-        
-    username=message.from_user.username
-    if x[0]=='/':
-        send_hello_message(message)
-        return 1
-   
+
+
+class MyStates(StatesGroup):
+    useername=State()
+    password=State()
+    assesment=State()
+
+
+
+
+
+@bot.message_handler(state='*',commands=['start','login'])
+def start_ex(message):
+    bot.delete_state(message.from_user.id,message.chat.id)
+    bot.set_state(message.from_user.id, MyStates.useername, message.chat.id)
+    bot.send_message(message.chat.id, 'Hi, write me a username')
+
+@bot.message_handler(state=MyStates.useername)
+def name_get(message):
     
-    if ree != 5:
-        y=generate_corurse(message)
+    bot.send_message(message.chat.id, 'Enter Password')
+    bot.set_state(message.from_user.id, MyStates.password, message.chat.id)
+    with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+        data['username'] = message.text
+
+
+@bot.message_handler(state=MyStates.password)
+def name_get(message):
+    
+    bot.set_state(message.from_user.id, MyStates.assesment, message.chat.id)
+    with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+        data['password'] = message.text
+    flag=loginn(data['username'],data['password'],message)
+    if flag:
+
         select_course(message)
     else:
-        bot.send_message(chat_id=message.chat.id,text="Invalid credentials")
-        bot.send_message(chat_id=message.chat.id,text="Enter ID")
-        
+        bot.send_message(message.chat.id, 'username or password is incorrect')
+        bot.set_state(message.from_user.id, MyStates.useername, message.chat.id)
+        bot.send_message(message.chat.id, 'Enter username')
 
 
+@bot.message_handler(state=MyStates.assesment)
+def assesmen(msg):
+
+    send_hello_message(msg)
+
+@bot.message_handler(state='*',commands=['logout'])
+def cancelled(msg):
+    bot.send_message(msg.chat.id,"you are logged out")
+    bot.delete_state(msg.from_user.id,msg.chat.id)
+
+
+bot.add_custom_filter(custom_filters.StateFilter(bot))
 bot.polling()
